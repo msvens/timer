@@ -1,11 +1,13 @@
 package controllers
 
 import java.sql.Timestamp
+import java.time.temporal.{ChronoUnit, TemporalUnit}
+import java.time._
 
 import com.google.inject.Inject
 import dao.{Timer, TimerDAO}
-import org.joda.time.DateTime
-import org.joda.time.format.{DateTimeFormatter, ISODateTimeFormat}
+//import org.joda.time.DateTime
+//import org.joda.time.format.{DateTimeFormatter, ISODateTimeFormat}
 import play.api.Logger
 import play.api.libs.json._
 import play.api.mvc.{Action, Controller, Result}
@@ -21,16 +23,17 @@ class TimerApi @Inject()(timerDAO: TimerDAO) extends Controller{
 
   import ApiContainers._
 
-  val dtf: DateTimeFormatter = ISODateTimeFormat.dateTime()
+  //val dtf: DateTimeFormatter = ISODateTimeFormat.dateTime()
 
   //Json Converters
   implicit val timestampFormat = new Format[Timestamp] {
     def reads(json: JsValue): JsResult[Timestamp] = {
       val str = json.as[String]
-      JsSuccess(new Timestamp((DateTime.parse(str).getMillis)))
+      JsSuccess(Timestamp.from(OffsetDateTime.parse(str).toInstant))
     }
     def writes(t: Timestamp): JsValue = {
-      JsString(dtf.print(t.getTime))
+      val odt = OffsetDateTime.ofInstant(t.toInstant,ZoneOffset.UTC)
+      JsString(odt.toString)
     }
     //def writes(t: Timestamp): JsValue = Json.toJson(timestampToDateTime(t))
     //def reads(json: JsValue): JsResult[Timestamp] = Json.fromJson[DateTime](json).map(dateTimeToTimestamp)
@@ -60,8 +63,8 @@ class TimerApi @Inject()(timerDAO: TimerDAO) extends Controller{
     for(t <- timerDAO.get(id)) yield (t match {
       case None => bad("no such timer " + id)
       case Some(timer) => {
-        val millis = timer.stop.get.getTime - DateTime.now().getMillis
-        
+        val duration = Duration.between(Instant.now(), timer.stop.get.toInstant);
+        val seconds = duration.getSeconds;
       }
 
     })
@@ -77,13 +80,13 @@ class TimerApi @Inject()(timerDAO: TimerDAO) extends Controller{
         Future(bad("addTimer", Some(JsError.toJson(errors))))
       },
       addTimer => {
-        val start = addTimer.start.getOrElse(DateTime.now())
+        val start = addTimer.start.getOrElse(OffsetDateTime.now())
         val stop = if(addTimer.seconds.isDefined){
-          start.plusSeconds(addTimer.seconds.get)
+          start.plus(addTimer.seconds.get, ChronoUnit.SECONDS)
         } else {
           addTimer.stop.getOrElse(start.plusYears(1))
         }
-        val t = Timer(None, addTimer.title, Some(new Timestamp(start.getMillis)), Some(new Timestamp(stop.getMillis)),addTimer.desc)
+        val t = Timer(None, addTimer.title, Some(new Timestamp(start.toInstant.toEpochMilli)), Some(new Timestamp(stop.toInstant.toEpochMilli)),addTimer.desc)
         (for{
           id <- timerDAO.insert(t) if id.isDefined
           tt <- timerDAO.get(id.get)
@@ -131,9 +134,11 @@ object ApiContainers {
 
   //def dateTimeToTimestamp(dt: DateTime): Timestamp = new Timestamp(dt.getMillis)
 
-  case class AddTimer(title: String, start: Option[DateTime] = None, stop: Option[DateTime] = None, seconds: Option[Int] = None, desc: Option[String] = None)
+  case class AddTimer(title: String, start: Option[OffsetDateTime] = None, stop: Option[OffsetDateTime] = None, seconds: Option[Int] = None, desc: Option[String] = None)
 
   case class ApiResponse(status: String = SUCESS, message: Option[String] = None, value: Option[JsValue] = None)
+
+  //case class
 
 
 }
